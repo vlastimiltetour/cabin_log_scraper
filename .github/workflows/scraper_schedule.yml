@@ -1,0 +1,13 @@
+name: Scheduledd Scraper Workflow 
+on:
+  push:
+    branches:
+      - main
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: Run Python Scraper script
+        run: python log_cabin_scraper.py
