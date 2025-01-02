@@ -1,4 +1,4 @@
-name: Scheduledd Scraper Workflow 
+name: Scheduled Scraper Workflow 
 on:
   push:
     branches:
