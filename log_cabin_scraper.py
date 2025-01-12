@@ -46,8 +46,7 @@ def return_cabin_overview():
   for url in url_list:
 
     if training_data:
-      pass
-
+      soup = parse_cabin_file(url)
     else:
       page = requests.get(url)
       soup = BeautifulSoup(page.content, 'html.parser')
@@ -72,16 +71,17 @@ def return_cabin_overview():
 
 
         if (raw_price == 'Cenanavyžádání') or (raw_price == 'Cena na vyžádání'):
-          raw_price = 0
           price = 0
 
         else:
           price_regex_remove_czk = raw_price.replace('Kč', '')
           price_regex_remove_irrelevant = re.sub(r'\(.*$', '', price_regex_remove_czk)
           price_regex_remove_blanks = re.sub(r'\s+', '', price_regex_remove_irrelevant)
+          price = price_regex_remove_blanks
+
 
           if type(price_regex_remove_blanks) == str:
-            price = 0
+            price = int(price_regex_remove_blanks)
           else:
             price = int(price_regex_remove_blanks)
 
@@ -126,22 +126,6 @@ def return_cabin_overview():
 from pymongo.mongo_client import MongoClient
 from pymongo.server_api import ServerApi
 
-def test_connection():
-  uri = "mongodb+srv://vtetour:913YeRIC00Che49O@cluster0.2bbgf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
-
-  # Create a new client and connect to the server
-  client = MongoClient(uri, server_api=ServerApi('1'))
-
-  # Send a ping to confirm a successful connection
-  try:
-      client.admin.command('ping')
-      return "Pinged your deployment. You successfully connected to MongoDB!"
-  except Exception as e:
-      return print(e)
-
-from pymongo import MongoClient
-import pandas as pd
-
 # Replace with your MongoDB connection string
 MONGO_URI = "mongodb+srv://vtetour:913YeRIC00Che49O@cluster0.2bbgf.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
 
@@ -169,6 +153,9 @@ if price_history_data:
     result_price_history = price_history_collection.insert_many(price_history_data)
     print(f"Inserted {len(result_price_history.inserted_ids)} documents into 'price_history' collection.")
 
+# MongoDB Pass
+# vtetour
+# 913YeRIC00Che49O
 
 from pymongo import MongoClient
 import pandas as pd
@@ -204,12 +191,18 @@ def read_mongo_db(id=None):
   return merged_df[merged_df['ID'] == id].sort_values('Timestamp')
   #return mongo_cabin_df
 
+
+from datetime import datetime
+
 def calculate_price_diff(group):
   if len(group) < 2:
     return 0
 
   return group.iloc[0]['Price'] - group.iloc[1]['Price']
 
+#min 400 zahrada
+#min 70 objekt
+#jak dlouho tam je
 
 def show_data_highlights():
   df = read_mongo_db(None)
@@ -220,14 +213,20 @@ def show_data_highlights():
         .reset_index(name="Price_Difference")
     )
 
-  
+  # sort the prices
+  # calculate diff between two most recent prices
+
   return price_diff_df
 
 def dashboard():
+  today = datetime.now().date()
+  #today = datetime(2025, 9, 1).date()
+
   df = read_mongo_db(None)
   df_sorted = df.sort_values(by=['ID', 'Timestamp'], ascending=[True, False])
   df_filtered_recent_data = df_sorted.drop_duplicates(subset=['ID'], keep='first')
   df_filtered_recent_data = df_filtered_recent_data.reset_index(drop=True)
+  df_filtered_recent_data = df_filtered_recent_data[df_filtered_recent_data['Timestamp'].dt.date == today]
 
   mean = round(df_filtered_recent_data['Price'].mean())
   stdev = round(df_filtered_recent_data['Price'].std())
@@ -237,18 +236,17 @@ def dashboard():
 
   no_of_cabins = df_filtered_recent_data["ID"].nunique()
   #top locations
-  top_5_expensive = df_filtered_recent_data.nlargest(5, 'Price')[['Title','Location', 'm2', 'Price', 'Price_m2', 'url']]
+  top_5_expensive = df_filtered_recent_data.nlargest(5, 'Price')[['Title','Location', 'm2', 'Price', 'Price_m2', 'url', 'Timestamp']]
   #df.sort_values(by=['col1'])
   top_5_cheap = df_filtered_recent_data[df_filtered_recent_data['Price'] > 0]
-  top_5_cheapest = top_5_cheap.nsmallest(5, 'Price')[['Title','Location', 'm2', 'Price', 'Price_m2','url']]
+  top_5_cheapest = top_5_cheap.nsmallest(5, 'Price')[['Title','Location', 'm2', 'Price', 'Price_m2','url', 'Timestamp']]
 
-  top_5_m2 = df_filtered_recent_data.nlargest(5, 'Price_m2')[['Title','Location', 'm2', 'Price', 'Price_m2', 'url']]
+  top_5_m2 = df_filtered_recent_data.nlargest(5, 'Price_m2')[['Title','Location', 'm2', 'Price', 'Price_m2', 'url', 'Timestamp']]
   bottom_5_m2 = df_filtered_recent_data[df_filtered_recent_data['Price_m2'] > 0]
-  bottom_5_m2 = bottom_5_m2.nsmallest(5, 'Price_m2')[['Title','Location', 'm2', 'Price', 'Price_m2','url']]
+  bottom_5_m2 = bottom_5_m2.nsmallest(5, 'Price_m2')[['Title','Location', 'm2', 'Price', 'Price_m2','url', 'Timestamp']]
   # top 5 diffs
   return no_of_cabins, mean, stdev, top_5_expensive, top_5_cheapest, top_5_m2, bottom_5_m2
 
-no_of_cabins, mean, stdev, top_5_expensive, top_5_cheapest, top_5_m2, bottom_5_m2 = dashboard()
 
 import smtplib
 from email.mime.multipart import MIMEMultipart
@@ -276,6 +274,7 @@ def send_email(subject, sender, recipients, password):
         <body>
             <h2>Dashboard Highlights</h2>
             <p>Number of Unique Cabins: <strong>{no_of_cabins}</strong></p>
+            <p>Searched </p>
             <p>Average price {mean}</p>
             <h3>Top 5 Most Expensive Cabins</h3>
             {top_5_expensive.to_html(index=False, escape=False)}
@@ -302,3 +301,7 @@ def send_email(subject, sender, recipients, password):
     print("Message sent!")
 
 send_email(subject, sender, recipients, password)
+
+# Zuza chce hlidat tyhle dva:
+# https://www.sreality.cz/detail/prodej/pozemek/bydleni/liten-belec-/1827717708
+# https://www.sreality.cz/detail/prodej/pozemek/zahrada/beroun--/388982092
